@@ -111,6 +111,7 @@ async def tg_webhook(request: Request, x_telegram_bot_api_secret_token: str = He
     update = telebot.types.Update.de_json(payload.decode("utf-8"))
     bot.process_new_updates([update])
     return {"ok": True}
+    print("UPDATE RECEIVED")
 
 # --- Nicepay webhook (оставляем ОДИН раз) ---
 @app.get("/webhook")
