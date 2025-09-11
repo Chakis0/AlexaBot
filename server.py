@@ -21,7 +21,7 @@ bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 # --- helpers ---
 WHITELIST = [
     958579430,
-
+    2095741832,
              ]  # твой chat_id
 
 def has_access(chat_id: int) -> bool:
