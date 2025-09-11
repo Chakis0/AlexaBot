@@ -4,9 +4,12 @@ import os
 import hashlib
 import requests
 from fastapi import Request, HTTPException
+import uuid
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-SECRET_KEY = os.getenv("SECRET_KEY", "")
+SECRET_KEY = os.getenv("SECRET_KEY", "65xts-M8QBZ-VrzNj-86SSf-px3Sq")
+MERCHANT_ID = os.getenv("MERCHANT_ID", "68c23b7d77760ff5c90f8aed")
+
 
 def tg_send(chat_id: int, text: str):
     """Отправка сообщения самому себе в Telegram из вебхука."""
@@ -61,24 +64,61 @@ async def nicepay_webhook(request: Request):
 payments = {}
 
 @app.get("/create_payment")
-def create_payment(amount: int = 1000):
+def create_payment(amount: int, chat_id: int, currency: str = "RUB"):
     """
-    Создаёт тестовую ссылку на оплату
+    Создаёт платёж в Nicepay и возвращает реальную ссылку.
+    amount — целое число в валюте (RUB: рубли), мы конвертируем в копейки.
+    chat_id — вшиваем в order_id, чтобы по вебхуку знать, кому писать "Оплачено".
     """
-    # Генерируем фиктивную ссылку
-    payment_link = f"https://testpay.fake/pay/{len(payments)+1}"
-    
-    # Сохраняем статус
-    payments[payment_link] = "pending"
-    
-    return {"payment_link": payment_link}
+
+    # 1) Лимиты из доки (пример для RUB и USD)
+    if currency == "RUB":
+        if amount < 200 or amount > 85000:
+            raise HTTPException(400, "Amount must be between 200 and 85000 RUB")
+        amount_minor = amount * 100
+    elif currency == "USD":
+        if amount < 10 or amount > 990:
+            raise HTTPException(400, "Amount must be between 10 and 990 USD")
+        amount_minor = amount * 100
+    else:
+        raise HTTPException(400, "Unsupported currency")
+
+    # 2) Собираем order_id вида "<chat_id>-<короткий uuid>"
+    order_id = f"{chat_id}-{uuid.uuid4().hex[:8]}"
+
+    # 3) Тело запроса как в доке Nicepay (Create Payment)
+    payload = {
+        "merchant_id": MERCHANT_ID,
+        "secret": SECRET_KEY,
+        "order_id": order_id,
+        "customer": f"user_{chat_id}",   # в доке — customer; в примере ещё встречается account
+        "account":  f"user_{chat_id}",
+        "amount": amount_minor,          # копейки/центы
+        "currency": currency,            # "RUB" | "USD" | ...
+        "description": "Top up from Telegram bot",
+        # "success_url": "https://alexabot-kg4y.onrender.com/health",
+        # "fail_url":    "https://alexabot-kg4y.onrender.com/health",
+    }
+
+    try:
+        r = requests.post("https://nicepay.io/public/api/payment", json=payload, timeout=25)
+        data = r.json()
+    except Exception as e:
+        raise HTTPException(502, f"Nicepay request failed: {e}")
+
+    # 4) Разбираем ответ
+    if data.get("status") == "success":
+        link = (data.get("data") or {}).get("link")
+        if not link:
+            raise HTTPException(502, "Nicepay success without link")
+        return {"payment_link": link, "order_id": order_id}
+    else:
+        msg = (data.get("data") or {}).get("message", "Unknown Nicepay error")
+        raise HTTPException(400, f"Nicepay error: {msg}")
 
 
 @app.get("/webhook")
-async def webhook(request: Request):
-    """
-    Имитация webhook после оплаты
-    """
+async def nicepay_webhook(request: Request):  
     params = request.query_params
     payment_link = params.get("payment_link")
     status = params.get("status")  # можно "success" или "fail"
