@@ -192,10 +192,14 @@ async def nicepay_webhook(request: Request):
             val = int(x)
         except Exception:
             return x  # если вдруг пришло не число — вернём как есть
-        if cur in ("RUB", "USD"):
+
+    # На практике Nicepay шлёт миноры (×100) для RUB, USD и USDT
+        if cur in ("RUB", "USD", "USDT"):
             return f"{val/100:.2f}"
-        # для прочих валют (если появятся) можно настроить по-другому
+
+    # если попадётся другая валюта — вернём как есть
         return str(val)
+
 
     amount_human = minor_to_human(amount_str, amount_cur)
     profit_human = minor_to_human(profit_str, profit_cur) if profit_str is not None else None
