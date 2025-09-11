@@ -19,7 +19,10 @@ app = FastAPI()
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 
 # --- helpers ---
-WHITELIST = [958579430]  # твой chat_id
+WHITELIST = [
+    958579430,
+
+             ]  # твой chat_id
 
 def has_access(chat_id: int) -> bool:
     return chat_id in WHITELIST
@@ -83,6 +86,17 @@ def create_payment_core(amount: int, chat_id: int, currency: str = "RUB"):
 
 # --- Telegram handlers ---
 
+# /getid — всегда отвечает (без проверки whitelist)
+@bot.message_handler(commands=['getid'])
+def getid(message):
+    uid = message.chat.id
+    uname = f"@{message.from_user.username}" if message.from_user and message.from_user.username else "—"
+    bot.send_message(
+        message.chat.id,
+        f"Ваш chat_id: `{uid}`\nusername: {uname}",
+        parse_mode="Markdown"
+    )
+
 @bot.message_handler(commands=['start'])
 def start(message):
     if not has_access(message.chat.id):
@@ -135,10 +149,18 @@ def handle_custom_amount(message):
 async def tg_webhook(request: Request, x_telegram_bot_api_secret_token: str = Header(None)):
     # проверяем секрет (если задан)
     if TG_WEBHOOK_SECRET and x_telegram_bot_api_secret_token != TG_WEBHOOK_SECRET:
-        raise HTTPException(403, "forbidden")
-    payload = await request.body()
-    update = telebot.types.Update.de_json(payload.decode("utf-8"))
-    bot.process_new_updates([update])
+        # Тут можно вернуть 403 — Telegram это поймёт как «не наш запрос».
+        # Но 403 тоже фиксируется в last_error_message. Оставим как есть.
+        return {"ok": True}
+
+    try:
+        payload = await request.body()
+        update = telebot.types.Update.de_json(payload.decode("utf-8"))
+        bot.process_new_updates([update])
+    except Exception as e:
+        # Логируем, но Telegram всегда отвечаем 200
+        print("TG webhook error:", e)
+
     return {"ok": True}
 
 # --- Nicepay webhook (GET) ---
