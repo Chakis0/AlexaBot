@@ -93,9 +93,9 @@ def getid(message):
     uname = f"@{message.from_user.username}" if message.from_user and message.from_user.username else "—"
     bot.send_message(
         message.chat.id,
-        f"Ваш chat_id: `{uid}`\nusername: {uname}",
-        parse_mode="Markdown"
+        f"Ваш chat_id: {uid}\nusername: {uname}"
     )
+
 
 @bot.message_handler(commands=['start'])
 def start(message):
