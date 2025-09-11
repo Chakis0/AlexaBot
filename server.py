@@ -34,3 +34,7 @@ async def webhook(request: Request):
         print(f"Платёж {payment_link} прошёл успешно ✅")
     
     return {"ok": True}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
