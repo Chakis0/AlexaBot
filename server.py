@@ -171,7 +171,7 @@ async def nicepay_webhook(request: Request):
     if not received_hash:
         raise HTTPException(400, "hash missing")
 
-    # формируем строку по правилу из доки: значения (отсортированные по ключам) через {np}, в конце секрет
+    # Проверка подписи: отсортированные значения через {np} + SECRET в конце
     base = "{np}".join([v for _, v in sorted(params.items(), key=lambda x: x[0])] + [SECRET_KEY])
     calc_hash = hashlib.sha256(base.encode()).hexdigest()
     if calc_hash != received_hash:
@@ -179,13 +179,39 @@ async def nicepay_webhook(request: Request):
 
     result   = params.get("result")
     order_id = params.get("order_id", "")
-    amount   = params.get("amount", "")
-    curr     = params.get("amount_currency", "")
 
+    # Денежные поля из вебхука
+    amount_str = params.get("amount", "0")                 # в минорах (копейки/центы)
+    amount_cur = params.get("amount_currency", "")
+    profit_str = params.get("profit")                      # может быть None
+    profit_cur = params.get("profit_currency")             # может быть None
+
+    # Конвертнём миноры -> нормальный вид для RUB/USD (÷100), иначе оставим как есть
+    def minor_to_human(x: str, cur: str) -> str:
+        try:
+            val = int(x)
+        except Exception:
+            return x  # если вдруг пришло не число — вернём как есть
+        if cur in ("RUB", "USD"):
+            return f"{val/100:.2f}"
+        # для прочих валют (если появятся) можно настроить по-другому
+        return str(val)
+
+    amount_human = minor_to_human(amount_str, amount_cur)
+    profit_human = minor_to_human(profit_str, profit_cur) if profit_str is not None else None
+
+    # Достаём chat_id из order_id вида "<chat_id>-<uuid>"
     chat_id = order_id.split("-", 1)[0] if "-" in order_id else None
+
     if result == "success" and chat_id:
-        tg_send(chat_id, f"✅ Оплата подтверждена. Сумма: {amount} {curr}")
+        if profit_human is not None and profit_cur:
+            text = f"✅ Оплата подтверждена. Сумма: {amount_human} {amount_cur} (на счёт: {profit_human} {profit_cur})"
+        else:
+            text = f"✅ Оплата подтверждена. Сумма: {amount_human} {amount_cur}"
+        tg_send(chat_id, text)
+
     return {"ok": True}
+
 
 # --- (опционально) ручной роут для браузерной проверки ---
 @app.get("/create_payment")
