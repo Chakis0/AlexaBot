@@ -54,19 +54,19 @@ def create_payment_core(amount: int, chat_id: int, currency: str = "RUB"):
     # 2) Генерируем order_id = "<chat_id>-<короткий_uuid>"
     order_id = f"{chat_id}-{uuid.uuid4().hex[:8]}"
 
+    uniq = uuid.uuid4().hex[:8]
+    customer_id = f"user_{chat_id}_{uniq}"
+
     # 3) Запрос в Nicepay
     payload = {
         "merchant_id": MERCHANT_ID,
         "secret":      SECRET_KEY,
         "order_id":    order_id,
-        "customer":    f"user_{chat_id}",
-        "account":     f"user_{chat_id}",
+        "customer":    customer_id,
+        "account":     customer_id,
         "amount":      amount_minor,
         "currency":    currency,
         "description": "Top up from Telegram bot",
-        # при желании можно добавить success_url / fail_url:
-        # "success_url": f"{PUBLIC_BASE_URL}/health",
-        # "fail_url":    f"{PUBLIC_BASE_URL}/health",
     }
 
     try:
