@@ -54,8 +54,8 @@ def create_payment_core(amount: int, chat_id: int, currency: str = "RUB"):
     # 2) Генерируем order_id = "<chat_id>-<короткий_uuid>"
     order_id = f"{chat_id}-{uuid.uuid4().hex[:8]}"
 
-    uniq = uuid.uuid4().hex[:8]
-    customer_id = f"user_{chat_id}_{uniq}"
+    uniq = uuid.uuid4().hex[:4]
+    customer_id = f"u{chat_id}{uniq}"
 
     # 3) Запрос в Nicepay
     payload = {
