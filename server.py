@@ -19,13 +19,45 @@ app = FastAPI()
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 
 # --- helpers ---
-WHITELIST = [
-    958579430,
-    2095741832,
-             ]  # твой chat_id
+WHITELIST = set([958579430])
 
 def has_access(chat_id: int) -> bool:
     return chat_id in WHITELIST
+
+@bot.message_handler(commands=['getid'])
+def getid(message):
+    bot.send_message(message.chat.id, f"Твой chat_id: {message.chat.id}")
+
+ADMIN_ID = 958579430  # твой id
+
+@bot.message_handler(commands=['grant'])
+def grant(message):
+    if message.chat.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "⛔ У тебя нет прав")
+        return
+    
+    try:
+        new_id = int(message.text.split()[1])  # /grant 123456789
+        WHITELIST.add(new_id)
+        bot.send_message(message.chat.id, f"✅ Пользователь {new_id} добавлен в whitelist")
+    except Exception:
+        bot.send_message(message.chat.id, "⚠️ Используй: /grant <chat_id>")
+
+@bot.message_handler(commands=['revoke'])
+def revoke(message):
+    if message.chat.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "⛔ У тебя нет прав")
+        return
+    
+    try:
+        del_id = int(message.text.split()[1])  # /revoke 123456789
+        if del_id in WHITELIST:
+            WHITELIST.remove(del_id)
+            bot.send_message(message.chat.id, f"🚫 Пользователь {del_id} удалён из whitelist")
+        else:
+            bot.send_message(message.chat.id, "⚠️ Такого пользователя нет в whitelist")
+    except Exception:
+        bot.send_message(message.chat.id, "⚠️ Используй: /revoke <chat_id>")
 
 def tg_send(chat_id: int, text: str):
     """Отправка сообщения в Telegram из серверной логики (например, из вебхука Nicepay)."""
