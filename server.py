@@ -6,6 +6,8 @@ import requests
 from fastapi import FastAPI, Request, HTTPException, Header
 import telebot
 from telebot import types
+import json
+from pathlib import Path
 
 # --- env ---
 PUBLIC_BASE_URL    = os.getenv("PUBLIC_BASE_URL", "https://alexabot-kg4y.onrender.com")
@@ -19,10 +21,35 @@ app = FastAPI()
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, threaded=False)
 
 # --- helpers ---
-WHITELIST = set([958579430])
+# === ACCESS CONTROL (постоянные + динамические) ===
+import json
+from pathlib import Path
+
+# 1) Постоянные ID: всегда имеют доступ (меняешь тут в коде)
+BASE_WHITELIST = {958579430,8051914154,2095741832,7167283179}  # добавь сюда ещё постоянные, через запятую
+
+# 2) Файл для динамических (добавленных командами) ID
+WHITELIST_FILE = Path("whitelist.json")
+
+def load_dynamic_whitelist() -> set[int]:
+    if WHITELIST_FILE.exists():
+        try:
+            with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return set(int(x) for x in data)
+        except Exception:
+            return set()
+    return set()
+
+def save_dynamic_whitelist(ids: set[int]) -> None:
+    with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(ids), f)
+
+# 3) Загружаем динамический список при старте
+DYNAMIC_WHITELIST: set[int] = load_dynamic_whitelist()
 
 def has_access(chat_id: int) -> bool:
-    return chat_id in WHITELIST
+    return (chat_id in BASE_WHITELIST) or (chat_id in DYNAMIC_WHITELIST)
 
 @bot.message_handler(commands=['getid'])
 def getid(message):
@@ -30,34 +57,38 @@ def getid(message):
 
 ADMIN_ID = 958579430  # твой id
 
-@bot.message_handler(commands=['grant'])
-def grant(message):
-    if message.chat.id != ADMIN_ID:
+# /add <chat_id> — добавить доступ (только для тех, кто в BASE_WHITELIST)
+@bot.message_handler(commands=['add'])
+def add_user(message):
+    if message.chat.id not in BASE_WHITELIST:
         bot.send_message(message.chat.id, "⛔ У тебя нет прав")
         return
-    
-    try:
-        new_id = int(message.text.split()[1])  # /grant 123456789
-        WHITELIST.add(new_id)
-        bot.send_message(message.chat.id, f"✅ Пользователь {new_id} добавлен в whitelist")
-    except Exception:
-        bot.send_message(message.chat.id, "⚠️ Используй: /grant <chat_id>")
+    parts = message.text.strip().split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        bot.send_message(message.chat.id, "⚠️ Используй: /add <chat_id>")
+        return
+    new_id = int(parts[1])
+    DYNAMIC_WHITELIST.add(new_id)
+    save_dynamic_whitelist(DYNAMIC_WHITELIST)
+    bot.send_message(message.chat.id, f"✅ Пользователь {new_id} добавлен")
 
-@bot.message_handler(commands=['revoke'])
-def revoke(message):
-    if message.chat.id != ADMIN_ID:
+# /delete <chat_id> — убрать доступ (только для тех, кто в BASE_WHITELIST)
+@bot.message_handler(commands=['delete'])
+def delete_user(message):
+    if message.chat.id not in BASE_WHITELIST:
         bot.send_message(message.chat.id, "⛔ У тебя нет прав")
         return
-    
-    try:
-        del_id = int(message.text.split()[1])  # /revoke 123456789
-        if del_id in WHITELIST:
-            WHITELIST.remove(del_id)
-            bot.send_message(message.chat.id, f"🚫 Пользователь {del_id} удалён из whitelist")
-        else:
-            bot.send_message(message.chat.id, "⚠️ Такого пользователя нет в whitelist")
-    except Exception:
-        bot.send_message(message.chat.id, "⚠️ Используй: /revoke <chat_id>")
+    parts = message.text.strip().split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        bot.send_message(message.chat.id, "⚠️ Используй: /delete <chat_id>")
+        return
+    del_id = int(parts[1])
+    if del_id in DYNAMIC_WHITELIST:
+        DYNAMIC_WHITELIST.remove(del_id)
+        save_dynamic_whitelist(DYNAMIC_WHITELIST)
+        bot.send_message(message.chat.id, f"🚫 Пользователь {del_id} удалён")
+    else:
+        bot.send_message(message.chat.id, "⚠️ Такого chat_id нет среди добавленных")
 
 def tg_send(chat_id: int, text: str):
     """Отправка сообщения в Telegram из серверной логики (например, из вебхука Nicepay)."""
