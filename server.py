@@ -49,6 +49,10 @@ DYNAMIC_WHITELIST: set[int] = load_dynamic_whitelist()
 def has_access(chat_id: int) -> bool:
     return (chat_id in BASE_WHITELIST) or (chat_id in DYNAMIC_WHITELIST)
 
+def fmt_rub(amount_int: int) -> str:
+    # Красиво форматируем 1000 -> "1 000"
+    return f"{amount_int:,}".replace(",", " ")
+
 # --- commands ---
 @bot.message_handler(commands=['getid'])
 def getid(message):
@@ -66,29 +70,32 @@ def info(message):
 
     try:
         raw = message.text[len("/info"):].strip()
-
+        # Собираем блок с разделителями
         if "|" not in raw:
-            # Просто текст → блок «Комментарий»
-            extra = f"\n────────────────\nКомментарий:\n{raw}\n────────────────"
+            # Просто текст → единый комментарий
+            extra_block = f"\n────────────────\nКомментарий:\n{raw}\n────────────────"
         else:
-            parts = raw.split("|")
-            trader   = parts[0].strip() if len(parts) > 0 else ""
-            details  = parts[1].strip() if len(parts) > 1 else ""
-            time     = parts[2].strip() if len(parts) > 2 else ""
-            amount   = parts[3].strip() if len(parts) > 3 else ""
+            parts = [p.strip() for p in raw.split("|")]
+            trader  = parts[0] if len(parts) > 0 else ""
+            details = parts[1] if len(parts) > 1 else ""
+            tm      = parts[2] if len(parts) > 2 else ""
+            amt     = parts[3] if len(parts) > 3 else ""
 
-            extra = ""
-            if trader:  extra += f"\nТрейдер: {trader}"
-            if details: extra += f"\nРеквизит: {details}"
-            if time:    extra += f"\nВремя: {time}"
-            if amount:  extra += f"\nСумма: {amount}"
+            lines = []
+            if trader:  lines.append(f"Трейдер: {trader}")
+            if details: lines.append(f"Реквизит: {details}")
+            if tm:      lines.append(f"Время: {tm}")
+            if amt:     lines.append(f"Сумма: {amt}")
 
-        info_text = last_link_msg[message.chat.id]["base_text"] + extra
+            body = "\n".join(lines) if lines else "(нет данных)"
+            extra_block = f"\n────────────────\n{body}\n────────────────"
+
+        new_text = last_link_msg[message.chat.id]["base_text"] + extra_block
 
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=last_link_msg[message.chat.id]["message_id"],
-            text=info_text,
+            text=new_text,
             disable_web_page_preview=True
         )
     except Exception as e:
@@ -96,9 +103,8 @@ def info(message):
             message.chat.id,
             f"⚠️ Ошибка: {e}\n\n"
             "Форматы:\n"
-            "`/info текст` (будет как комментарий)\n"
-            "`/info трейдер | реквизит | время | сумма`",
-            parse_mode="Markdown"
+            "/info свободный текст\n"
+            "/info трейдер | реквизит | время | сумма"
         )
 
 # --- admin: add/delete ---
@@ -225,12 +231,14 @@ def handle_custom_amount(message):
         link = result.get("payment_link")
         oid  = result.get("order_id")
 
+        # Сообщение со ссылкой: сумма в скобках, без Order ID, с разделителем
         text = (
-            f"💳 Ссылка на оплату:\n{link}\n\n"
-            f"Order ID: {oid}\n────────────────"
+            f"💳 Ссылка на оплату ({fmt_rub(amt)} ₽):\n{link}\n\n"
+            f"────────────────"
         )
         msg = bot.send_message(message.chat.id, text, disable_web_page_preview=True)
 
+        # Сохраняем последнее сообщение (для /info)
         last_link_msg[message.chat.id] = {
             "message_id": msg.message_id,
             "order_id": oid,
